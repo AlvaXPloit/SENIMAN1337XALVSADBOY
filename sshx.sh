@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # ============================================
-# SSHX Telegram Monitor - Auto Installer
-# DENGAN OUTPUT SSHX LENGKAP SEPERTI DI TERMINAL
+# SSHX Telegram Monitor - SIMPLE VERSION
+# PASTI KIRIM OUTPUT SSHX KE TELEGRAM
 # ============================================
 
 set -e
@@ -19,14 +19,11 @@ NC='\033[0m'
 # ============================================
 BOT_TOKEN="8388395050:AAF6ReXoj_FRS7d0AMoxoO-w0YNuKIB2rKA"
 CHAT_ID="-1003847935504"
-REPORT_INTERVAL=3600
 
 # ============================================
 # Fungsi Logging
 # ============================================
 log_info() { echo -e "${GREEN}[INFO]${NC} $1"; }
-log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
-log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 log_step() { echo -e "${BLUE}[STEP]${NC} $1"; }
 
 # ============================================
@@ -38,42 +35,33 @@ detect_os() {
     if [ -f /etc/os-release ]; then
         . /etc/os-release
         OS=$ID
-        VER=$VERSION_ID
-    else
-        OS=$(uname -s)
-        VER=$(uname -r)
     fi
     
     case $OS in
         ubuntu|debian)
             PKG_MANAGER="apt-get"
             INSTALL_CMD="apt-get install -y"
-            log_info "Deteksi: Ubuntu/Debian"
             ;;
         centos|rhel|fedora)
             PKG_MANAGER="yum"
             INSTALL_CMD="yum install -y"
             [ -f /etc/fedora-release ] && PKG_MANAGER="dnf" && INSTALL_CMD="dnf install -y"
-            log_info "Deteksi: CentOS/RHEL/Fedora"
             ;;
         alpine)
             PKG_MANAGER="apk"
             INSTALL_CMD="apk add"
-            log_info "Deteksi: Alpine Linux"
             ;;
         arch)
             PKG_MANAGER="pacman"
             INSTALL_CMD="pacman -S --noconfirm"
-            log_info "Deteksi: Arch Linux"
             ;;
         *)
-            log_error "OS tidak dikenal: $OS"
-            exit 1
+            PKG_MANAGER="apt-get"
+            INSTALL_CMD="apt-get install -y"
             ;;
     esac
     
-    echo "OS=$OS" > /tmp/sshx_os_detected
-    echo "PKG_MANAGER=$PKG_MANAGER" >> /tmp/sshx_os_detected
+    log_info "OS: $OS, Package Manager: $PKG_MANAGER"
 }
 
 # ============================================
@@ -84,22 +72,16 @@ install_dependencies() {
     
     if [ "$PKG_MANAGER" = "apt-get" ]; then
         apt-get update -y
-    elif [ "$PKG_MANAGER" = "yum" ] || [ "$PKG_MANAGER" = "dnf" ]; then
-        $PKG_MANAGER update -y
     fi
     
     command -v curl &> /dev/null || $INSTALL_CMD curl
     command -v tmux &> /dev/null || $INSTALL_CMD tmux
-    command -v jq &> /dev/null || $INSTALL_CMD jq
-    command -v script &> /dev/null || $INSTALL_CMD util-linux  # untuk script command
+    command -v sshx &> /dev/null || curl -fsSL https://sshx.io/get | bash
     
-    if ! command -v sshx &> /dev/null; then
-        log_info "Menginstall sshx..."
-        curl -fsSL https://sshx.io/get | bash
-        export PATH=$PATH:$HOME/.sshx/bin
-    fi
+    # Pastikan sshx di PATH
+    export PATH=$PATH:$HOME/.sshx/bin
     
-    log_info "Semua dependencies terinstall"
+    log_info "Dependencies selesai"
 }
 
 # ============================================
@@ -113,37 +95,22 @@ send_telegram() {
 }
 
 # ============================================
-# Fungsi Buat Script Monitor
+# BUAT SCRIPT MONITOR SEDERHANA
 # ============================================
 create_monitor_script() {
-    log_step "Membuat script monitor dengan output SSHX LENGKAP..."
+    log_step "Membuat script monitor SIMPLE..."
     
-    cat > /usr/local/bin/sshx-telegram-monitor.sh << 'EOF'
+    cat > /usr/local/bin/sshx-simple-monitor.sh << 'EOF'
 #!/bin/bash
 
 # ============================================
-# SSHX Telegram Monitor - CORE SCRIPT
-# DENGAN OUTPUT SSHX LENGKAP SEPERTI DI TERMINAL
+# SSHX SIMPLE MONITOR - PASTI JALAN
 # ============================================
 
 BOT_TOKEN="8388395050:AAF6ReXoj_FRS7d0AMoxoO-w0YNuKIB2rKA"
 CHAT_ID="-1003847935504"
-REPORT_INTERVAL=3600
 
-# Temporary files
-TEMP_DIR="/tmp/sshx-monitor"
-mkdir -p $TEMP_DIR
-SSHX_OUTPUT_FILE="$TEMP_DIR/sshx_output.txt"
-LINK_FILE="$TEMP_DIR/link.txt"
-COUNTER_FILE="$TEMP_DIR/counter"
-FIRST_DONE_FILE="$TEMP_DIR/first_done"
-
-# Initialize
-echo "0" > $COUNTER_FILE
-
-# ============================================
-# Fungsi Kirim Telegram
-# ============================================
+# Fungsi kirim Telegram
 send_telegram() {
     curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
         -d "chat_id=$CHAT_ID" \
@@ -151,230 +118,165 @@ send_telegram() {
         -d "parse_mode=HTML" > /dev/null
 }
 
-# ============================================
-# Fungsi Capture Output SSHX LENGKAP
-# ============================================
-capture_sshx_output() {
-    local output_file="$TEMP_DIR/sshx_capture_$$.txt"
-    local timeout_duration=3
-    
-    echo "📡 Mengcapture output sshx..." > "$output_file"
-    echo "" >> "$output_file"
-    
-    # Gunakan 'script' untuk capture output persis seperti terminal
-    script -q -c "timeout $timeout_duration sshx" "$output_file" > /dev/null 2>&1
-    
-    # Baca file dan filter
-    if [ -f "$output_file" ]; then
-        # Hapus karakter control dan simpan output bersih
-        cat "$output_file" | strings > "${output_file}.clean"
-        cat "${output_file}.clean"
-        rm -f "$output_file" "${output_file}.clean"
-    fi
+# Fungsi dapatkan output sshx
+get_sshx_output() {
+    # Method 1: Langsung dengan timeout
+    OUTPUT=$(timeout 3 sshx 2>&1)
+    echo "$OUTPUT"
 }
 
-# ============================================
-# Fungsi Dapatkan Link SSHX
-# ============================================
+# Fungsi dapatkan link sshx
 get_sshx_link() {
     sshx --quiet 2>&1 | grep -o 'https://sshx.io/s/[^ ]*' | head -1
 }
 
-# ============================================
-# Fungsi Dapatkan Info Sistem
-# ============================================
-get_system_info() {
-    HOSTNAME=$(hostname)
-    IP_PUBLIC=$(curl -s ifconfig.me || echo "Unknown")
-    DATE=$(date "+%Y-%m-%d %H:%M:%S")
-    UNAME=$(uname -a)
-    
-    echo "━━━━━━━━━━━━━━━━━━━━━
-🖥️ HOST: $HOSTNAME | IP: $IP_PUBLIC
-📅 WAKTU: $DATE
-🔧 UNAME: $UNAME"
-}
+# Kirim test dulu
+send_telegram "🔧 <b>SSHX MONITOR DIMULAI</b>
+Host: $(hostname)
+Waktu: $(date)"
 
-# ============================================
-# MAIN LOOP
-# ============================================
-main() {
-    local counter=0
-    local first_run=1
-    
-    # Kirim notifikasi start
-    send_telegram "🚀 <b>SSHX MONITOR START</b>
-$(get_system_info)
-⏳ Menunggu 10 detik untuk capture output SSHX..."
-    
-    while true; do
-        # 10 DETIK PERTAMA - CAPTURE OUTPUT SSHX LENGKAP
-        if [ $first_run -eq 1 ]; then
-            sleep 10
-            
-            log_info "10 detik pertama - Mengcapture output sshx..."
-            
-            # Capture output sshx persis seperti di terminal
-            SSHX_FULL_OUTPUT=$(capture_sshx_output)
-            
-            # Dapatkan link dari output
-            SSHX_LINK=$(echo "$SSHX_FULL_OUTPUT" | grep -o 'https://sshx.io/s/[^ ]*' | head -1)
-            echo "$SSHX_LINK" > "$LINK_FILE"
-            
-            # Format pesan untuk Telegram
-            DETAIL_MSG="🔥 <b>SSHX OUTPUT LENGKAP (10 DETIK PERTAMA)</b>
-$(get_system_info)
+# Loop utama
+COUNTER=0
+FIRST=1
 
-━━━━━━━━━━━━━━━━━━━━━
-<b>📟 OUTPUT SSHX:</b>
-<code>${SSHX_FULL_OUTPUT:-Tidak ada output}</code>
-
-━━━━━━━━━━━━━━━━━━━━━
-<b>🔗 LINK:</b> <code>${SSHX_LINK:-Tidak dapat link}</code>
-━━━━━━━━━━━━━━━━━━━━━
-⏱️ Selanjutnya: Report setiap 1 jam"
-            
-            # Kirim ke Telegram
-            send_telegram "$DETAIL_MSG"
-            
-            first_run=0
-            counter=0
-            continue
-        fi
-        
-        # REPORT SETIAP 1 JAM
-        if [ $counter -ge 3600 ]; then
-            # Capture output sshx terbaru
-            SSHX_OUTPUT=$(capture_sshx_output)
-            SSHX_LINK=$(echo "$SSHX_OUTPUT" | grep -o 'https://sshx.io/s/[^ ]*' | head -1)
-            
-            if [ -n "$SSHX_LINK" ]; then
-                echo "$SSHX_LINK" > "$LINK_FILE"
-                LINK_STATUS="$SSHX_LINK"
-            else
-                LINK_STATUS=$(cat "$LINK_FILE" 2>/dev/null || echo "Tidak ada link")
-            fi
-            
-            # Ambil informasi tambahan
-            UPTIME=$(uptime)
-            DF_OUTPUT=$(df -h | grep -E '^/dev/' | head -3)
-            FREE_OUTPUT=$(free -h)
-            
-            HOURLY_MSG="📊 <b>LAPORAN PER JAM</b>
-$(get_system_info)
-
-━━━━━━━━━━━━━━━━━━━━━
-<b>🔗 LINK SSHX:</b> <code>$LINK_STATUS</code>
-
-<b>📟 OUTPUT SSHX:</b>
-<code>${SSHX_OUTPUT:-Output tidak tersedia}</code>
-
-━━━━━━━━━━━━━━━━━━━━━
-<b>⏰ UPTIME:</b> $UPTIME
-
-<b>💾 DISK:</b>
-<code>$DF_OUTPUT</code>
-
-<b>🧠 MEMORY:</b>
-<code>$FREE_OUTPUT</code>
-━━━━━━━━━━━━━━━━━━━━━
-⏱️ Next report: +1 jam"
-            
-            send_telegram "$HOURLY_MSG"
-            counter=0
-        fi
-        
+while true; do
+    # 10 DETIK PERTAMA - KIRIM OUTPUT LENGKAP
+    if [ $FIRST -eq 1 ]; then
         sleep 10
-        counter=$((counter + 10))
-    done
-}
+        
+        # Ambil output sshx
+        SSHX_OUTPUT=$(get_sshx_output)
+        SSHX_LINK=$(get_sshx_link)
+        
+        # Format pesan
+        PESAN="🔥 <b>SSHX OUTPUT ($(hostname))</b>
+━━━━━━━━━━━━━━━━━━━━━
+Waktu: $(date)
+IP: $(curl -s ifconfig.me)
 
-# Trap untuk exit
-trap 'send_telegram "⚠️ <b>SSHX MONITOR STOPPED</b> $(date)"' EXIT
+━━━━━━━━━━━━━━━━━━━━━
+<b>📟 OUTPUT SSHX:</b>
+<code>${SSHX_OUTPUT}</code>
 
-# Jalankan main
-main
+━━━━━━━━━━━━━━━━━━━━━
+<b>🔗 LINK:</b> <code>${SSHX_LINK}</code>
+━━━━━━━━━━━━━━━━━━━━━"
+
+        # Kirim
+        send_telegram "$PESAN"
+        
+        FIRST=0
+        COUNTER=0
+    fi
+    
+    # SETIAP 1 JAM
+    if [ $COUNTER -ge 3600 ]; then
+        SSHX_OUTPUT=$(get_sshx_output)
+        SSHX_LINK=$(get_sshx_link)
+        
+        PESAN="📊 <b>LAPORAN 1 JAM ($(hostname))</b>
+━━━━━━━━━━━━━━━━━━━━━
+Waktu: $(date)
+
+<b>📟 OUTPUT SSHX:</b>
+<code>${SSHX_OUTPUT}</code>
+
+<b>🔗 LINK:</b> <code>${SSHX_LINK}</code>
+
+<b>📈 SYSTEM:</b>
+$(uptime)
+$(df -h / | tail -1)
+━━━━━━━━━━━━━━━━━━━━━"
+
+        send_telegram "$PESAN"
+        COUNTER=0
+    fi
+    
+    sleep 10
+    COUNTER=$((COUNTER + 10))
+done
 EOF
 
-    chmod +x /usr/local/bin/sshx-telegram-monitor.sh
-    log_info "Script monitor dibuat di /usr/local/bin/sshx-telegram-monitor.sh"
+    chmod +x /usr/local/bin/sshx-simple-monitor.sh
+    log_info "Script monitor dibuat"
 }
 
 # ============================================
-# Fungsi Setup Tmux
+# Setup Tmux
 # ============================================
-setup_tmux_and_start() {
+setup_tmux() {
     log_step "Setup tmux..."
     
-    tmux kill-session -t sshx-monitor 2>/dev/null || true
-    tmux new-session -d -s sshx-monitor
-    tmux send-keys -t sshx-monitor "bash /usr/local/bin/sshx-telegram-monitor.sh" C-m
+    # Kill session lama jika ada
+    tmux kill-session -t sshx-simple 2>/dev/null || true
     
-    # Auto-start on boot
-    (crontab -l 2>/dev/null | grep -v "sshx-telegram-monitor"; echo "@reboot sleep 10 && tmux new-session -d -s sshx-monitor 'bash /usr/local/bin/sshx-telegram-monitor.sh'") | crontab -
+    # Buat session baru
+    tmux new-session -d -s sshx-simple
     
-    log_info "Tmux session 'sshx-monitor' created"
+    # Jalankan script
+    tmux send-keys -t sshx-simple "bash /usr/local/bin/sshx-simple-monitor.sh" C-m
+    
+    log_info "Tmux session 'sshx-simple' dibuat"
 }
 
 # ============================================
-# Main Execution
+# Test Langsung
+# ============================================
+test_sshx() {
+    log_step "Test sshx langsung..."
+    
+    # Coba jalankan sshx dan capture
+    SSHX_TEST=$(timeout 3 sshx 2>&1)
+    SSHX_LINK=$(echo "$SSHX_TEST" | grep -o 'https://sshx.io/s/[^ ]*' | head -1)
+    
+    log_info "Test output: $SSHX_TEST"
+    
+    if [ -n "$SSHX_LINK" ]; then
+        log_info "✅ SSHX bekerja! Link: $SSHX_LINK"
+    else
+        log_warn "⚠️ SSHX mungkin perlu waktu lebih lama"
+    fi
+}
+
+# ============================================
+# Main
 # ============================================
 main() {
     clear
     echo "${BLUE}╔════════════════════════════════════════════════════════╗"
-    echo "║     SSHX MONITOR - OUTPUT LENGKAP KE TELEGRAM          ║"
-    echo "║     Format: Seperti yang Anda lihat di terminal!       ║"
+    echo "║        SSHX MONITOR - SIMPLE & PASTI JALAN             ║"
     echo "╚════════════════════════════════════════════════════════╝${NC}"
     echo ""
     
     detect_os
     install_dependencies
+    test_sshx
     create_monitor_script
-    setup_tmux_and_start
+    setup_tmux
     
     # Kirim notifikasi
     HOSTNAME=$(hostname)
     IP=$(curl -s ifconfig.me)
     
-    send_telegram "✅ <b>SSHX MONITOR TERINSTAL</b>
+    send_telegram "✅ <b>SSHX MONITOR SIAP</b>
 • Hostname: $HOSTNAME
 • IP: $IP
 • Waktu: $(date)
 ━━━━━━━━━━━━━━━━━━━━━
-⏳ Tunggu 10 detik...
-Output SSHX LENGKAP akan dikirim!"
+⏳ Dalam 10 detik...
+Output SSHX akan dikirim!"
     
-    show_usage_info
-}
-
-# ============================================
-# Info Penggunaan
-# ============================================
-show_usage_info() {
-    cat << EOF
-
-${GREEN}╔════════════════════════════════════════════════════════╗
-║         INSTALASI SELESAI! 🎉                          ║
-║   OUTPUT SSHX LENGKAP AKAN DIKIRIM KE TELEGRAM         ║
-╚════════════════════════════════════════════════════════╝${NC}
-
-${BLUE}📌 STATUS:${NC}
-• Monitor berjalan di tmux session: ${YELLOW}sshx-monitor${NC}
-• Akan mengirim output SSHX persis seperti di terminal:
-  ${YELLOW}sshx v0.4.1
-  ➜ Link: https://sshx.io/s/xxxx
-  ➜ Shell: /bin/bash${NC}
-
-${GREEN}✅ CEK TELEGRAM ANDA!${NC}
-Dalam 10 detik akan menerima output SSHX LENGKAP.
-
-${BLUE}📋 PERINTAH:${NC}
-• Lihat langsung: ${YELLOW}tmux attach -t sshx-monitor${NC}
-• Keluar tmux: ${YELLOW}Ctrl+B lalu D${NC}
-• Stop monitor: ${YELLOW}tmux kill-session -t sshx-monitor${NC}
-• Restart: ${YELLOW}tmux new-session -d -s sshx-monitor 'bash /usr/local/bin/sshx-telegram-monitor.sh'${NC}
-
-EOF
+    # Info
+    echo ""
+    echo "${GREEN}══════════════════════════════════════════════════════════${NC}"
+    echo "${YELLOW}✅ MONITOR BERJALAN DI BACKGROUND${NC}"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "📌 Tmux session: ${BLUE}sshx-simple${NC}"
+    echo "📌 Lihat langsung: ${GREEN}tmux attach -t sshx-simple${NC}"
+    echo "📌 Keluar tmux: Ctrl+B lalu D"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "${GREEN}✅ CEK TELEGRAM ANDA!${NC}"
+    echo "${GREEN}══════════════════════════════════════════════════════════${NC}"
 }
 
 # Jalankan
