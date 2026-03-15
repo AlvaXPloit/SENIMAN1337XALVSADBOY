@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================
-# SSHX TELEGRAM MONITOR - STABLE FULL VERSION
+# SSHX TELEGRAM MONITOR - FINAL VERSION
 # ============================================
 
 set -e
@@ -22,9 +22,9 @@ CHAT_ID="-1003847935504"
 
 send_telegram(){
   curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
-    -d "chat_id=$CHAT_ID" \
-    -d "text=$1" \
-    -d "parse_mode=HTML" > /dev/null
+       -d "chat_id=$CHAT_ID" \
+       -d "text=$1" \
+       -d "parse_mode=HTML" > /dev/null
 }
 
 # ==============================
@@ -35,7 +35,7 @@ log_step() { echo -e "${BLUE}[STEP]${NC} $1"; }
 log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 
 # ==============================
-# Deteksi OS
+# Deteksi OS & package manager
 # ==============================
 detect_os(){
   log_step "Mendeteksi sistem operasi..."
@@ -43,12 +43,13 @@ detect_os(){
     . /etc/os-release
     OS=$ID
   fi
+
   case $OS in
     ubuntu|debian)
       PKG_MANAGER="apt-get"
       INSTALL_CMD="apt-get install -y"
       ;;
-    centos|rhel|fedora)
+    centos|rhel|fedora|almalinux)
       PKG_MANAGER="yum"
       INSTALL_CMD="yum install -y"
       [ -f /etc/fedora-release ] && PKG_MANAGER="dnf" && INSTALL_CMD="dnf install -y"
@@ -154,8 +155,7 @@ $SERVER_INFO
 <code>$SSHX_OUTPUT</code>
 
 🔗 SSHX Link:
-<code>$SSHX_LINK</code>
-"
+<code>$SSHX_LINK</code>"
   send_telegram "$MSG"
 }
 
@@ -176,14 +176,16 @@ create_monitor_script(){
   log_step "Membuat script monitor /usr/local/bin/sshx-monitor.sh"
   cat > /usr/local/bin/sshx-monitor.sh << 'EOF'
 #!/bin/bash
-BOT_TOKEN="ISI_TOKEN_KAMU"
-CHAT_ID="ISI_CHAT_ID"
+BOT_TOKEN="8388395050:AAF6ReXoj_FRS7d0AMoxoO-w0YNuKIB2rKA"
+CHAT_ID="-1003847935504"
+
 send_telegram(){
   curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
-    -d "chat_id=$CHAT_ID" \
-    -d "text=$1" \
-    -d "parse_mode=HTML" > /dev/null
+       -d "chat_id=$CHAT_ID" \
+       -d "text=$1" \
+       -d "parse_mode=HTML" > /dev/null
 }
+
 get_server_info(){
   HOST=$(hostname)
   IP=$(curl -s ifconfig.me)
@@ -192,6 +194,7 @@ get_server_info(){
   CPU=$(top -bn1 | grep "Cpu(s)")
   RAM=$(free -h | grep Mem)
   DISK=$(df -h / | tail -1)
+
   echo "<b>Hostname:</b> $HOST
 <b>IP:</b> $IP
 <b>System:</b>
@@ -205,6 +208,7 @@ get_server_info(){
 <b>Disk:</b>
 <code>$DISK</code>"
 }
+
 run_sshx(){
   ATTEMPTS=0
   while [ $ATTEMPTS -lt 5 ]; do
@@ -219,11 +223,13 @@ run_sshx(){
   done
   echo "$OUTPUT|TIDAK_ADA_LINK"
 }
+
 send_report(){
   SERVER_INFO=$(get_server_info)
   SSHX_DATA=$(run_sshx)
   SSHX_OUTPUT=$(echo "$SSHX_DATA" | cut -d'|' -f1)
   SSHX_LINK=$(echo "$SSHX_DATA" | cut -d'|' -f2)
+
   MSG="🔥 <b>SSHX REPORT</b>
 
 $SERVER_INFO
@@ -237,8 +243,10 @@ $SERVER_INFO
 <code>$SSHX_LINK</code>"
   send_telegram "$MSG"
 }
-# Notifikasi awal
+
+# Kirim laporan pertama
 send_report
+
 # Loop tiap 1 jam
 while true; do
   sleep 3600
@@ -257,8 +265,8 @@ main(){
   install_dependencies
   create_monitor_script
   setup_tmux
-  log_info "SSHX Monitor berjalan di tmux"
-  log_info "Cek dengan: tmux attach -t sshx-monitor"
+  log_info "✅ SSHX Monitor berjalan di tmux"
+  log_info "📌 Cek dengan: tmux attach -t sshx-monitor"
   send_telegram "✅ <b>SSHX Monitor Aktif</b> • $(hostname) • IP: $(curl -s ifconfig.me) • $(date)"
 }
 
