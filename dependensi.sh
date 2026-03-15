@@ -1,6 +1,6 @@
 #!/bin/bash
-# Auto Install Python Dependencies - FIXED VERSION
-# Cara pakai: bash -c "$(curl -fsSL https://raw.githubusercontent.com/USERNAME/REPO/main/install-python-deps-fixed.sh)"
+# Auto Install Python Dependencies - FINAL FIX
+# Cara pakai: bash -c "$(curl -fsSL https://raw.githubusercontent.com/USERNAME/REPO/main/install-python-deps-final.sh)"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -9,7 +9,7 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 echo -e "${BLUE}========================================${NC}"
-echo -e "${GREEN}  Auto Install Python Dependencies (FIXED)${NC}"
+echo -e "${GREEN}  Auto Install Python Dependencies (FINAL)${NC}"
 echo -e "${BLUE}========================================${NC}"
 
 # Deteksi OS
@@ -26,59 +26,24 @@ detect_os() {
 OS_TYPE=$(detect_os)
 echo -e "${YELLOW}Detected OS: $OS_TYPE${NC}"
 
-# Install system packages dengan force
-echo -e "\n${YELLOW}[1] Installing system packages...${NC}"
-case $OS_TYPE in
-    ubuntu|debian)
-        apt-get update -y
-        apt-get install -y python3 python3-pip python3-venv python3-dev build-essential libssl-dev libffi-dev wget curl git
-        ;;
-    centos|rhel|fedora|almalinux)
-        yum install -y epel-release
-        yum install -y python3 python3-pip python3-devel gcc openssl-devel libffi-devel wget curl git
-        ;;
-    *)
-        apt-get update -y 2>/dev/null || yum update -y 2>/dev/null
-        apt-get install -y python3 python3-pip 2>/dev/null || yum install -y python3 python3-pip 2>/dev/null
-        ;;
-esac
+# Update package list
+echo -e "\n${YELLOW}[1] Updating package list...${NC}"
+apt-get update -y
 
-# Upgrade pip dengan force
-echo -e "\n${YELLOW}[2] Upgrading pip...${NC}"
-python3 -m pip install --upgrade pip --break-system-packages 2>/dev/null || python3 -m pip install --upgrade pip
+# Install system packages
+echo -e "\n${YELLOW}[2] Installing system packages...${NC}"
+apt-get install -y python3 python3-pip python3-venv python3-dev build-essential \
+    libssl-dev libffi-dev wget curl git netcat-openbsd nmap sshpass openssh-client \
+    net-tools dnsutils
 
-# Install dependencies SATU PER SATU dengan verbose
-echo -e "\n${YELLOW}[3] Installing Python dependencies one by one...${NC}"
+# Upgrade pip
+echo -e "\n${YELLOW}[3] Upgrading pip...${NC}"
+python3 -m pip install --upgrade pip setuptools wheel
 
-# Array of packages to install
-PACKAGES=(
-    "requests"
-    "beautifulsoup4"
-    "paramiko"
-    "colorama"
-    "urllib3"
-    "lxml"
-    "cryptography"
-    "pyOpenSSL"
-)
+# Install Python dependencies - CLEAN VERSION
+echo -e "\n${YELLOW}[4] Installing Python dependencies...${NC}"
 
-# Install each package individually
-for package in "${PACKAGES[@]}"; do
-    echo -e "${BLUE}Installing $package...${NC}"
-    
-    # Coba berbagai metode instalasi
-    python3 -m pip install --upgrade "$package" --break-system-packages 2>/dev/null || \
-    python3 -m pip install --upgrade "$package" --ignore-installed 2>/dev/null || \
-    python3 -m pip install "$package" 2>/dev/null || \
-    pip3 install "$package" 2>/dev/null || \
-    echo -e "${RED}Failed to install $package${NC}"
-    
-    # Verifikasi instalasi
-    python3 -c "import $package" 2>/dev/null && echo -e "${GREEN}✓ $package installed${NC}" || echo -e "${RED}✗ $package failed${NC}"
-done
-
-# Install via requirements file sebagai backup
-echo -e "\n${YELLOW}[4] Installing via requirements file...${NC}"
+# Buat requirements.txt yang bersih (tanpa komentar)
 cat > requirements.txt << 'EOF'
 requests>=2.31.0
 beautifulsoup4>=4.12.0
@@ -90,19 +55,42 @@ cryptography>=42.0.0
 pyOpenSSL>=24.0.0
 EOF
 
-python3 -m pip install --upgrade -r requirements.txt --break-system-packages 2>/dev/null || \
-python3 -m pip install -r requirements.txt
+# Tampilkan isi requirements
+echo -e "${BLUE}Requirements:${NC}"
+cat requirements.txt
 
-# Install dengan force menggunakan --no-cache-dir
-echo -e "\n${YELLOW}[5] Force installing with --no-cache-dir...${NC}"
-python3 -m pip install --no-cache-dir --upgrade -r requirements.txt --break-system-packages 2>/dev/null || \
-python3 -m pip install --no-cache-dir -r requirements.txt
+# Install dengan berbagai metode
+echo -e "\n${YELLOW}[5] Installing with pip...${NC}"
 
-# Verifikasi final dengan script Python
-echo -e "\n${YELLOW}[6] Final verification...${NC}"
+# Metode 1: Install dengan --break-system-packages (untuk Ubuntu 24.04+)
+python3 -m pip install --upgrade --break-system-packages -r requirements.txt 2>/dev/null
+
+if [ $? -ne 0 ]; then
+    # Metode 2: Install normal
+    python3 -m pip install --upgrade -r requirements.txt 2>/dev/null
+fi
+
+if [ $? -ne 0 ]; then
+    # Metode 3: Install satu per satu
+    echo -e "${YELLOW}Installing one by one...${NC}"
+    python3 -m pip install --upgrade requests
+    python3 -m pip install --upgrade beautifulsoup4
+    python3 -m pip install --upgrade paramiko
+    python3 -m pip install --upgrade colorama
+    python3 -m pip install --upgrade urllib3
+    python3 -m pip install --upgrade lxml
+    python3 -m pip install --upgrade cryptography
+    python3 -m pip install --upgrade pyOpenSSL
+fi
+
+# Verifikasi instalasi
+echo -e "\n${YELLOW}[6] Verifying installation...${NC}"
+
+# Buat script verifikasi Python
 python3 << 'EOF'
 import sys
 import importlib.util
+import subprocess
 
 packages = [
     ('requests', 'requests'),
@@ -119,37 +107,52 @@ print('\033[1;33mTesting imports:\033[0m')
 all_good = True
 
 for module_name, package_name in packages:
-    spec = importlib.util.find_spec(module_name)
-    if spec is not None:
-        print(f'\033[0;32m✓ {package_name} found at {spec.origin}\033[0m')
-    else:
-        print(f'\033[0;31m✗ {package_name} NOT FOUND\033[0m')
+    try:
+        if module_name == 'bs4':
+            import bs4
+            version = getattr(bs4, '__version__', 'unknown')
+        elif module_name == 'OpenSSL':
+            import OpenSSL
+            version = OpenSSL.__version__
+        else:
+            module = __import__(module_name)
+            version = getattr(module, '__version__', 'unknown')
+        print(f'\033[0;32m✓ {package_name} {version}\033[0m')
+    except ImportError as e:
+        print(f'\033[0;31m✗ {package_name} NOT FOUND: {e}\033[0m')
         all_good = False
 
-# Cek lokasi instalasi pip
-import subprocess
-result = subprocess.run([sys.executable, '-m', 'pip', 'list'], capture_output=True, text=True)
-print(f'\n\033[1;33mPip installed packages:\033[0m')
-for line in result.stdout.split('\n'):
-    if any(pkg in line.lower() for pkg in ['requests', 'beautifulsoup', 'paramiko', 'colorama', 'urllib3', 'lxml', 'cryptography', 'openssl']):
-        print(f'  {line}')
+# Cek built-in modules
+builtins = ['re', 'sys', 'os', 'socket', 'datetime', 'threading', 'concurrent.futures', 'urllib.parse']
+for module in builtins:
+    try:
+        __import__(module)
+        print(f'\033[0;32m✓ {module} (built-in)\033[0m')
+    except ImportError:
+        print(f'\033[0;31m✗ {module} (built-in) not available\033[0m')
+        all_good = False
 
 if all_good:
     print(f'\n\033[0;32m✓ All dependencies verified!\033[0m')
     sys.exit(0)
 else:
     print(f'\n\033[0;31m✗ Some dependencies are missing\033[0m')
+    
+    # Tampilkan pip list untuk debugging
+    print(f'\n\033[1;33mInstalled packages via pip:\033[0m')
+    result = subprocess.run([sys.executable, '-m', 'pip', 'list'], capture_output=True, text=True)
+    for line in result.stdout.split('\n'):
+        if any(pkg in line.lower() for pkg in ['requests', 'beautifulsoup', 'paramiko', 'colorama', 'urllib3', 'lxml', 'cryptography', 'openssl']):
+            print(f'  {line}')
+    
     sys.exit(1)
 EOF
 
-# Jika masih gagal, coba install dengan apt (untuk Ubuntu/Debian)
+# Jika masih gagal, coba install dengan apt
 if [ $? -ne 0 ]; then
     echo -e "\n${YELLOW}[7] Trying system packages as fallback...${NC}"
-    case $OS_TYPE in
-        ubuntu|debian)
-            apt-get install -y python3-requests python3-bs4 python3-paramiko python3-colorama python3-urllib3 python3-lxml python3-cryptography python3-openssl
-            ;;
-    esac
+    apt-get install -y python3-requests python3-bs4 python3-paramiko python3-colorama \
+        python3-urllib3 python3-lxml python3-cryptography python3-openssl
 fi
 
 # Buat script test sederhana
@@ -160,51 +163,57 @@ cat > test_deps.py << 'EOF'
 Test script untuk memverifikasi semua dependencies
 """
 import sys
-import os
+import importlib.metadata
 
-def test_import(module_name, package_name):
+def print_version(package_name, import_name=None):
+    if import_name is None:
+        import_name = package_name
+    
     try:
-        if module_name == 'bs4':
+        if import_name == 'bs4':
             from bs4 import BeautifulSoup
-            print(f"✓ {package_name}: {BeautifulSoup.__version__ if hasattr(BeautifulSoup, '__version__') else 'OK'}")
-        elif module_name == 'OpenSSL':
+            version = importlib.metadata.version('beautifulsoup4')
+        elif import_name == 'OpenSSL':
             import OpenSSL
-            print(f"✓ {package_name}: {OpenSSL.__version__}")
+            version = OpenSSL.__version__
         else:
-            module = __import__(module_name)
-            version = getattr(module, '__version__', 'unknown')
-            print(f"✓ {package_name}: {version}")
+            module = __import__(import_name)
+            version = getattr(module, '__version__', importlib.metadata.version(package_name))
+        print(f"✓ {package_name}: {version}")
         return True
-    except ImportError as e:
+    except (ImportError, importlib.metadata.PackageNotFoundError) as e:
         print(f"✗ {package_name}: {e}")
         return False
 
 print("Testing Python dependencies:")
-print("-" * 40)
+print("-" * 50)
 
 # Test imports
 tests = [
     ('requests', 'requests'),
-    ('bs4', 'beautifulsoup4'),
+    ('beautifulsoup4', 'bs4'),
     ('paramiko', 'paramiko'),
     ('colorama', 'colorama'),
     ('urllib3', 'urllib3'),
     ('lxml', 'lxml'),
     ('cryptography', 'cryptography'),
-    ('OpenSSL', 'pyOpenSSL')
+    ('pyOpenSSL', 'OpenSSL')
 ]
 
 success = True
-for module, package in tests:
-    if not test_import(module, package):
+for package, import_name in tests:
+    if not print_version(package, import_name):
         success = False
 
-print("-" * 40)
+print("-" * 50)
 if success:
     print("✅ All dependencies installed successfully!")
+    print("\nYou can now run your Python script:")
+    print("  python3 your_script.py")
     sys.exit(0)
 else:
-    print("❌ Some dependencies are missing. Check the errors above.")
+    print("❌ Some dependencies are missing. Try installing manually:")
+    print("  python3 -m pip install --user requests beautifulsoup4 paramiko colorama urllib3 lxml cryptography pyOpenSSL")
     sys.exit(1)
 EOF
 
@@ -220,13 +229,13 @@ echo -e "\n${BLUE}========================================${NC}"
 echo -e "${GREEN}Installation Complete!${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo -e "Python: ${GREEN}$(python3 --version)${NC}"
-echo -e "Pip: ${GREEN}$(python3 -m pip --version)${NC}"
-echo -e "\n${YELLOW}Installed packages:${NC}"
-python3 -m pip list | grep -E "requests|beautifulsoup|paramiko|colorama|urllib3|lxml|cryptography|OpenSSL" || echo "No packages found via pip"
+echo -e "Pip: ${GREEN}$(python3 -m pip --version | cut -d' ' -f1,2)${NC}"
+echo -e "\n${YELLOW}Pip list:${NC}"
+python3 -m pip list | grep -E "requests|beautifulsoup|paramiko|colorama|urllib3|lxml|cryptography|OpenSSL" || echo "No packages found"
 
 echo -e "\n${BLUE}To use your Python script:${NC}"
 echo -e "1. ${GREEN}python3 test_deps.py${NC} - test dependencies"
 echo -e "2. ${GREEN}python3 your_script.py${NC} - run your actual script"
 
-echo -e "\n${YELLOW}If dependencies still missing, try:${NC}"
-echo -e "  ${GREEN}python3 -m pip install --user requests beautifulsoup4 paramiko colorama urllib3 lxml cryptography pyOpenSSL${NC}"
+echo -e "\n${YELLOW}If you still have issues, try:${NC}"
+echo -e "  ${GREEN}python3 -m pip install --user -r requirements.txt${NC}"
