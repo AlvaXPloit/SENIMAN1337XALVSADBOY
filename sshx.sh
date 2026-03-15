@@ -42,8 +42,10 @@ $UPDATE
 
 command -v curl >/dev/null || $INSTALL curl
 command -v tmux >/dev/null || $INSTALL tmux
+command -v grep >/dev/null || $INSTALL grep
 
 if ! command -v sshx >/dev/null; then
+echo "[STEP] Install sshx"
 curl -fsSL https://sshx.io/get | bash
 fi
 
@@ -53,9 +55,13 @@ HOST=$(hostname)
 IP=$(curl -s ifconfig.me)
 TIME=$(date)
 
-echo "[STEP] Running sshx..."
+echo "[STEP] Starting sshx..."
 
-LINK=$(sshx --quiet)
+sshx > /tmp/sshx.log 2>&1 &
+
+sleep 5
+
+LINK=$(grep -o 'https://sshx.io/s/[^ ]*' /tmp/sshx.log | head -1)
 
 MSG="✅ <b>SSHX MONITOR STARTED</b>
 Host: $HOST
