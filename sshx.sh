@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================
-# SSHX TELEGRAM MONITOR - FINAL VERSION
+# SSHX TELEGRAM MONITOR - FINAL FULL
 # ============================================
 
 set -e
@@ -104,26 +104,22 @@ get_server_info(){
 <b>System:</b>
 <code>$UNAME</code>
 
-<b>Uptime:</b>
-<code>$UPTIME</code>
+<b>Uptime:</b> <code>$UPTIME</code>
 
-<b>CPU:</b>
-<code>$CPU</code>
+<b>CPU:</b> <code>$CPU</code>
 
-<b>RAM:</b>
-<code>$RAM</code>
+<b>RAM:</b> <code>$RAM</code>
 
-<b>Disk:</b>
-<code>$DISK</code>"
+<b>Disk:</b> <code>$DISK</code>"
 }
 
 # ==============================
-# Jalankan SSHX + retry sampai link muncul
+# Jalankan SSHX & ambil output + link
 # ==============================
 run_sshx(){
   ATTEMPTS=0
   while [ $ATTEMPTS -lt 5 ]; do
-    OUTPUT=$(timeout 20 sshx 2>&1 || true)
+    OUTPUT=$(timeout 20 sshx --quiet 2>&1 || true)
     LINK=$(echo "$OUTPUT" | grep -o 'https://sshx.io/s/[^ ]*' | head -1)
     if [ -n "$LINK" ]; then
       echo "$OUTPUT|$LINK"
@@ -132,7 +128,6 @@ run_sshx(){
     ATTEMPTS=$((ATTEMPTS+1))
     sleep 5
   done
-  # fallback jika link tetap tidak muncul
   echo "$OUTPUT|TIDAK_ADA_LINK"
 }
 
@@ -156,21 +151,12 @@ $SERVER_INFO
 
 🔗 SSHX Link:
 <code>$SSHX_LINK</code>"
+
   send_telegram "$MSG"
 }
 
 # ==============================
-# Setup tmux
-# ==============================
-setup_tmux(){
-  log_step "Menjalankan monitor di tmux..."
-  tmux kill-session -t sshx-monitor 2>/dev/null || true
-  tmux new-session -d -s sshx-monitor
-  tmux send-keys -t sshx-monitor "bash /usr/local/bin/sshx-monitor.sh" C-m
-}
-
-# ==============================
-# Buat script monitor
+# Buat script monitor untuk tmux
 # ==============================
 create_monitor_script(){
   log_step "Membuat script monitor /usr/local/bin/sshx-monitor.sh"
@@ -212,7 +198,7 @@ get_server_info(){
 run_sshx(){
   ATTEMPTS=0
   while [ $ATTEMPTS -lt 5 ]; do
-    OUTPUT=$(timeout 20 sshx 2>&1 || true)
+    OUTPUT=$(timeout 20 sshx --quiet 2>&1 || true)
     LINK=$(echo "$OUTPUT" | grep -o 'https://sshx.io/s/[^ ]*' | head -1)
     if [ -n "$LINK" ]; then
       echo "$OUTPUT|$LINK"
@@ -241,19 +227,29 @@ $SERVER_INFO
 
 🔗 SSHX Link:
 <code>$SSHX_LINK</code>"
+
   send_telegram "$MSG"
 }
 
-# Kirim laporan pertama
+# Kirim laporan pertama segera
 send_report
 
-# Loop tiap 1 jam
+# Loop setiap 1 jam
 while true; do
   sleep 3600
   send_report
 done
 EOF
   chmod +x /usr/local/bin/sshx-monitor.sh
+}
+
+# ==============================
+# Jalankan monitor di tmux
+# ==============================
+setup_tmux(){
+  log_step "Menjalankan monitor di tmux..."
+  tmux kill-session -t sshx-monitor 2>/dev/null || true
+  tmux new-session -d -s sshx-monitor "bash /usr/local/bin/sshx-monitor.sh"
 }
 
 # ==============================
@@ -267,7 +263,9 @@ main(){
   setup_tmux
   log_info "✅ SSHX Monitor berjalan di tmux"
   log_info "📌 Cek dengan: tmux attach -t sshx-monitor"
-  send_telegram "✅ <b>SSHX Monitor Aktif</b> • $(hostname) • IP: $(curl -s ifconfig.me) • $(date)"
+
+  # Kirim laporan pertama lengkap ke Telegram
+  send_report
 }
 
 main
